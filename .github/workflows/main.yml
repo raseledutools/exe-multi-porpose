@@ -13,18 +13,20 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4  # <-- এখানে v4 করা হয়েছে
+        uses: actions/checkout@v4
 
       - name: Setup vcpkg and Install Dependencies
+        # This will install 64-bit libraries explicitly
         run: |
           vcpkg install opencv poppler qpdf libharu tesseract qrcodegen --triplet x64-windows
           vcpkg integrate install
 
       - name: Configure CMake
+        # Strictly telling CMake to use the x64-windows triplet
         run: |
           mkdir build
           cd build
-          cmake .. -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" -A x64
+          cmake .. -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -A x64
 
       - name: Build Executable
         run: |
@@ -32,7 +34,7 @@ jobs:
           cmake --build . --config Release
 
       - name: Upload EXE as Artifact
-        uses: actions/upload-artifact@v4  # <-- এখানেও v4 করা হয়েছে
+        uses: actions/upload-artifact@v4
         with:
           name: RasFocus-Pro-Max-App
           path: build/Release/RasFocusProMax.exe
