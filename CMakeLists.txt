@@ -5,16 +5,15 @@ project(RasFocusProMax)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Find Packages from vcpkg
-find_package(OpenCV REQUIRED)
-find_package(haru REQUIRED)
-find_package(Poppler REQUIRED)
-find_package(qpdf REQUIRED)
-find_package(tesseract REQUIRED)
+# Strict vcpkg package configuration
+find_package(OpenCV CONFIG REQUIRED)
+find_package(libharu CONFIG REQUIRED)
+find_package(Poppler CONFIG REQUIRED)
+find_package(qpdf CONFIG REQUIRED)
+find_package(tesseract CONFIG REQUIRED)
 find_package(qrcodegen CONFIG REQUIRED)
 
-# Executable Setup
-# WIN32 flag is required to hide the black console/terminal window
+# Executable Setup (WIN32 hides the CMD console)
 add_executable(RasFocusProMax WIN32 main.cpp)
 
 # Link Windows Native Libraries
@@ -25,7 +24,7 @@ target_link_libraries(RasFocusProMax PRIVATE
     shlwapi
 )
 
-# Link vcpkg External Libraries
+# Link vcpkg External Libraries perfectly
 target_link_libraries(RasFocusProMax PRIVATE
     ${OpenCV_LIBS}
     libharu::hpdf
