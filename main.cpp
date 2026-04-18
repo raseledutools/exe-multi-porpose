@@ -3,7 +3,7 @@
 #include <gdiplus.h>
 #include <commdlg.h>
 #include <shellapi.h>
-#include <mmsystem.h> // For Audio
+#include <mmsystem.h>
 #include <vector>
 #include <string>
 #include <fstream>
@@ -29,14 +29,14 @@
 
 #pragma comment (lib,"Gdiplus.lib")
 #pragma comment (lib, "ole32.lib")
-#pragma comment (lib, "winmm.lib") // For Audio Playback
+#pragma comment (lib, "winmm.lib")
 
 using namespace Gdiplus;
 using qrcodegen::QrCode;
 
 // --- Globals ---
 const int BASE_WIDTH = 1150; 
-const int BASE_HEIGHT = 850; // Increased to fit 6 rows seamlessly
+const int BASE_HEIGHT = 850; 
 float g_scaleFactor = 1.0f;
 int g_hoveredBtn = -1;
 
@@ -107,142 +107,371 @@ std::wstring SaveFileDialog(HWND hwnd, const wchar_t* filter, const wchar_t* def
     return L"";
 }
 
-// --- CORE FEATURES 1-16 (Summarized Logic) ---
-void Feature_ResizeImage(HWND hwnd, int w, int h) { MessageBoxW(hwnd, L"Image Resized (Logic applied).", L"Success", MB_OK); }
-void Feature_CamScanner(HWND hwnd) { MessageBoxW(hwnd, L"CamScanner Filter Applied via OpenCV.", L"Success", MB_OK); }
-void Feature_ImgToPdf(HWND hwnd) { MessageBoxW(hwnd, L"Image Converted to PDF via libharu.", L"Success", MB_OK); }
-void Feature_MergePDF(HWND hwnd) { MessageBoxW(hwnd, L"PDFs Merged via QPDF.", L"Success", MB_OK); }
-void Feature_ExtractFirstPage(HWND hwnd) { MessageBoxW(hwnd, L"First Page Extracted.", L"Success", MB_OK); }
-void Feature_PdfToImg(HWND hwnd) { MessageBoxW(hwnd, L"PDF to Image generated via Poppler.", L"Success", MB_OK); }
-void Feature_OCR(HWND hwnd) { MessageBoxW(hwnd, L"Text extracted via Tesseract OCR.", L"Success", MB_OK); }
-void Feature_LockPDF(HWND hwnd) { MessageBoxW(hwnd, L"PDF Locked.", L"Success", MB_OK); }
-void Feature_UnlockPDF(HWND hwnd) { MessageBoxW(hwnd, L"PDF Unlocked.", L"Success", MB_OK); }
-
-void Feature_GenerateQR(HWND hwnd) {
-    std::string text = GetClipboardText(hwnd);
-    if(text.empty()) { MessageBoxW(hwnd, L"Clipboard empty!", L"Warning", MB_ICONWARNING); return; }
-    MessageBoxW(hwnd, L"QR Generated from Clipboard and Saved!", L"Success", MB_OK);
+int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
+    UINT num = 0, size = 0; GetImageEncodersSize(&num, &size);
+    if (size == 0) return -1;
+    ImageCodecInfo* pImageCodecInfo = (ImageCodecInfo*)(malloc(size));
+    GetImageEncoders(num, size, pImageCodecInfo);
+    for (UINT j = 0; j < num; ++j) {
+        if (wcscmp(pImageCodecInfo[j].MimeType, format) == 0) {
+            *pClsid = pImageCodecInfo[j].Clsid; free(pImageCodecInfo); return j;
+        }
+    }
+    free(pImageCodecInfo); return -1;
 }
 
+// ==========================================================
+// 1 TO 16: FULLY PRACTICAL IMPLEMENTATIONS
+// ==========================================================
+
+// 1 & 2. Resize Logic (Job Photo 300x300 / Signature 300x80)
+void Feature_ResizeImage(HWND hwnd, int w, int h) {
+    std::wstring inPath = OpenFileDialog(hwnd, L"Images\0*.jpg;*.png\0");
+    if (inPath.empty()) return;
+    std::wstring outPath = SaveFileDialog(hwnd, L"JPEG Image\0*.jpg\0", L"jpg");
+    if (outPath.empty()) return;
+
+    Image* originalImg = new Image(inPath.c_str());
+    Bitmap* resizedImg = new Bitmap(w, h, PixelFormat32bppARGB);
+    Graphics g(resizedImg);
+    g.SetSmoothingMode(SmoothingModeHighQuality);
+    g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+    SolidBrush bg(Color(255, 255, 255));
+    g.FillRectangle(&bg, 0, 0, w, h);
+    g.DrawImage(originalImg, 0, 0, w, h);
+
+    CLSID jpegClsid; GetEncoderClsid(L"image/jpeg", &jpegClsid);
+    resizedImg->Save(outPath.c_str(), &jpegClsid, NULL);
+
+    delete resizedImg; delete originalImg;
+    MessageBoxW(hwnd, L"Image Resized and Saved Successfully!", L"Success", MB_OK);
+}
+
+// 3. CamScanner Filter (OpenCV)
+void Feature_CamScanner(HWND hwnd) {
+    std::wstring inPath = OpenFileDialog(hwnd, L"Images\0*.jpg;*.png\0");
+    if (inPath.empty()) return;
+    std::wstring outPath = SaveFileDialog(hwnd, L"Images\0*.jpg\0", L"jpg");
+    if (outPath.empty()) return;
+
+    cv::Mat src = cv::imread(WideToUtf8(inPath));
+    if (!src.empty()) {
+        cv::Mat gray, blur, res;
+        cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
+        cv::GaussianBlur(gray, blur, cv::Size(5, 5), 0);
+        cv::adaptiveThreshold(blur, res, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 21, 10);
+        cv::imwrite(WideToUtf8(outPath), res);
+        MessageBoxW(hwnd, L"CamScanner Filter Applied!", L"Success", MB_OK);
+    } else {
+        MessageBoxW(hwnd, L"Failed to load image.", L"Error", MB_ICONERROR);
+    }
+}
+
+// 4. Image to PDF (libharu)
+void Feature_ImgToPdf(HWND hwnd) {
+    std::wstring inPath = OpenFileDialog(hwnd, L"Images\0*.jpg\0");
+    if (inPath.empty()) return;
+    std::wstring outPath = SaveFileDialog(hwnd, L"PDF\0*.pdf\0", L"pdf");
+    if (outPath.empty()) return;
+
+    HPDF_Doc pdf = HPDF_New(NULL, NULL);
+    HPDF_Page page = HPDF_AddPage(pdf);
+    HPDF_Image img = HPDF_LoadJpegImageFromFile(pdf, WideToUtf8(inPath).c_str());
+    if (img) {
+        HPDF_Page_SetWidth(page, HPDF_Image_GetWidth(img));
+        HPDF_Page_SetHeight(page, HPDF_Image_GetHeight(img));
+        HPDF_Page_DrawImage(page, img, 0, 0, HPDF_Image_GetWidth(img), HPDF_Image_GetHeight(img));
+    }
+    HPDF_SaveToFile(pdf, WideToUtf8(outPath).c_str());
+    HPDF_Free(pdf);
+    MessageBoxW(hwnd, L"Converted to High Quality PDF!", L"Success", MB_OK);
+}
+
+// 5. Merge PDF (QPDF)
+void Feature_MergePDF(HWND hwnd) {
+    std::wstring p1 = OpenFileDialog(hwnd, L"First PDF\0*.pdf\0"); if(p1.empty()) return;
+    std::wstring p2 = OpenFileDialog(hwnd, L"Second PDF\0*.pdf\0"); if(p2.empty()) return;
+    std::wstring out = SaveFileDialog(hwnd, L"Merged PDF\0*.pdf\0", L"pdf"); if(out.empty()) return;
+
+    try {
+        QPDF m_pdf; m_pdf.emptyPDF();
+        QPDFPageDocumentHelper m_helper(m_pdf);
+        QPDF in1; in1.processFile(WideToUtf8(p1).c_str());
+        for (auto& page : QPDFPageDocumentHelper(in1).getAllPages()) m_helper.addPage(page, false);
+        QPDF in2; in2.processFile(WideToUtf8(p2).c_str());
+        for (auto& page : QPDFPageDocumentHelper(in2).getAllPages()) m_helper.addPage(page, false);
+        QPDFWriter writer(m_pdf, WideToUtf8(out).c_str()); writer.write();
+        MessageBoxW(hwnd, L"PDFs Merged Successfully!", L"Success", MB_OK);
+    } catch(...) { MessageBoxW(hwnd, L"Merge Failed", L"Error", MB_ICONERROR); }
+}
+
+// 6. Extract 1st Page (QPDF)
+void Feature_ExtractFirstPage(HWND hwnd) {
+    std::wstring inPath = OpenFileDialog(hwnd, L"Select PDF\0*.pdf\0"); if (inPath.empty()) return;
+    std::wstring outPath = SaveFileDialog(hwnd, L"Extracted Page PDF\0*.pdf\0", L"pdf"); if (outPath.empty()) return;
+
+    try {
+        QPDF inPdf; inPdf.processFile(WideToUtf8(inPath).c_str());
+        QPDF outPdf; outPdf.emptyPDF();
+        QPDFPageDocumentHelper inHelper(inPdf), outHelper(outPdf);
+        auto pages = inHelper.getAllPages();
+        if(!pages.empty()) {
+            outHelper.addPage(pages[0], false);
+            QPDFWriter writer(outPdf, WideToUtf8(outPath).c_str()); writer.write();
+            MessageBoxW(hwnd, L"First Page Extracted Successfully!", L"Success", MB_OK);
+        }
+    } catch(...) { MessageBoxW(hwnd, L"Extraction Failed", L"Error", MB_ICONERROR); }
+}
+
+// 7. PDF to Image (Poppler)
+void Feature_PdfToImg(HWND hwnd) {
+    std::wstring inPath = OpenFileDialog(hwnd, L"PDF Files\0*.pdf\0"); if(inPath.empty()) return;
+    std::wstring outPath = SaveFileDialog(hwnd, L"JPEG\0*.jpg\0", L"jpg"); if(outPath.empty()) return;
+
+    poppler::document *doc = poppler::document::load_from_file(WideToUtf8(inPath));
+    if (doc && doc->pages() > 0) {
+        poppler::page *p = doc->create_page(0);
+        poppler::image img = p->render_image(300.0, 300.0);
+        img.save(WideToUtf8(outPath), "jpeg");
+        delete p; delete doc;
+        MessageBoxW(hwnd, L"First page converted to Image!", L"Success", MB_OK);
+    } else {
+        MessageBoxW(hwnd, L"Failed to render PDF.", L"Error", MB_ICONERROR);
+    }
+}
+
+// 8. Text To Speech (SAPI)
 void Feature_TextToSpeech(HWND hwnd) {
+    std::string clip = GetClipboardText(hwnd);
+    std::wstring textToRead = clip.empty() ? L"Please copy some English text to clipboard first." : Utf8ToWide(clip);
+    
     ISpVoice * pVoice = NULL;
     if (SUCCEEDED(::CoInitialize(NULL)) && SUCCEEDED(CoCreateInstance(CLSID_SpVoice, NULL, CLSCTX_ALL, IID_ISpVoice, (void **)&pVoice))) {
-        pVoice->Speak(L"RasFocus Pro Max System Activated.", 0, NULL);
+        pVoice->Speak(textToRead.c_str(), 0, NULL);
         pVoice->Release();
     }
     ::CoUninitialize();
 }
 
-void Feature_PhotoViewer(HWND hwnd) { MessageBoxW(hwnd, L"OpenCV High-Speed Viewer Launched.", L"Viewer", MB_OK); }
-void Feature_TextViewer(HWND hwnd) { ShellExecuteW(hwnd, L"open", L"notepad.exe", NULL, NULL, SW_SHOWNORMAL); }
-void Feature_ExcelDocViewer(HWND hwnd) { MessageBoxW(hwnd, L"Select an Office Document to launch native viewer.", L"Launch", MB_OK); }
+// 9. OCR Extract Text (Tesseract)
+void Feature_OCR(HWND hwnd) {
+    std::wstring inPath = OpenFileDialog(hwnd, L"Images\0*.jpg;*.png\0"); if (inPath.empty()) return;
+    std::wstring outPath = SaveFileDialog(hwnd, L"Text File\0*.txt\0", L"txt"); if (outPath.empty()) return;
 
-// --- SYSTEM UTILITY FEATURES (17-20) ---
+    tesseract::TessBaseAPI* api = new tesseract::TessBaseAPI();
+    if (api->Init(NULL, "eng")) {
+        MessageBoxW(hwnd, L"Could not initialize Tesseract! 'tessdata' folder missing.", L"Error", MB_ICONERROR);
+        return;
+    }
+    Pix* image = pixRead(WideToUtf8(inPath).c_str());
+    api->SetImage(image);
+    char* outText = api->GetUTF8Text();
+    
+    std::ofstream outFile(WideToUtf8(outPath)); outFile << outText; outFile.close();
+    api->End(); delete[] outText; pixDestroy(&image);
+    MessageBoxW(hwnd, L"Text Extracted and Saved via OCR!", L"Success", MB_OK);
+}
+
+// 10. Generate QR from Clipboard
+void Feature_GenerateQR(HWND hwnd) {
+    std::string text = GetClipboardText(hwnd);
+    if(text.empty()) { MessageBoxW(hwnd, L"Clipboard empty! Copy a link first.", L"Warning", MB_ICONWARNING); return; }
+    
+    std::wstring outPath = SaveFileDialog(hwnd, L"PNG Image\0*.png\0", L"png"); if (outPath.empty()) return;
+
+    QrCode qr = QrCode::encodeText(text.c_str(), QrCode::Ecc::HIGH);
+    int size = qr.getSize(), scale = 10, border = 4;
+    int imgSize = (size + border * 2) * scale;
+
+    Bitmap* bmp = new Bitmap(imgSize, imgSize, PixelFormat32bppARGB);
+    Graphics g(bmp);
+    SolidBrush white(Color(255, 255, 255)), black(Color(0, 0, 0));
+    g.FillRectangle(&white, 0, 0, imgSize, imgSize);
+
+    for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+            if (qr.getModule(x, y)) g.FillRectangle(&black, (x + border) * scale, (y + border) * scale, scale, scale);
+        }
+    }
+    CLSID pngClsid; GetEncoderClsid(L"image/png", &pngClsid);
+    bmp->Save(outPath.c_str(), &pngClsid, NULL); delete bmp;
+    MessageBoxW(hwnd, L"QR Code Generated and Saved!", L"Success", MB_OK);
+}
+
+// 11. Lock PDF
+void Feature_LockPDF(HWND hwnd) {
+    std::wstring inPath = OpenFileDialog(hwnd, L"Select PDF\0*.pdf\0"); if(inPath.empty()) return;
+    std::wstring outPath = SaveFileDialog(hwnd, L"Locked PDF\0*.pdf\0", L"pdf"); if(outPath.empty()) return;
+
+    try {
+        QPDF pdf; pdf.processFile(WideToUtf8(inPath).c_str());
+        QPDFWriter writer(pdf, WideToUtf8(outPath).c_str());
+        writer.setEncryption(256, "12345", "12345", QPDFWriter::e_print_none, QPDFWriter::e_modify_none, true, true);
+        writer.write();
+        MessageBoxW(hwnd, L"PDF Locked! (Password: 12345)", L"Success", MB_OK);
+    } catch(...) { MessageBoxW(hwnd, L"Failed to lock PDF", L"Error", MB_ICONERROR); }
+}
+
+// 12. Unlock PDF
+void Feature_UnlockPDF(HWND hwnd) {
+    std::wstring inPath = OpenFileDialog(hwnd, L"Select Locked PDF\0*.pdf\0"); if(inPath.empty()) return;
+    std::wstring outPath = SaveFileDialog(hwnd, L"Unlocked PDF\0*.pdf\0", L"pdf"); if(outPath.empty()) return;
+
+    try {
+        QPDF pdf; pdf.processFile(WideToUtf8(inPath).c_str(), "12345");
+        QPDFWriter writer(pdf, WideToUtf8(outPath).c_str());
+        writer.setPreserveEncryption(false); writer.write();
+        MessageBoxW(hwnd, L"PDF Unlocked permanently!", L"Success", MB_OK);
+    } catch(...) { MessageBoxW(hwnd, L"Unlock Failed! Wrong password?", L"Error", MB_ICONERROR); }
+}
+
+// 13. PDF Organizer (Burst)
+void Feature_PDFOrganizer(HWND hwnd) {
+    std::wstring inPath = OpenFileDialog(hwnd, L"Select PDF\0*.pdf\0"); if (inPath.empty()) return;
+    try {
+        QPDF inPdf; inPdf.processFile(WideToUtf8(inPath).c_str());
+        QPDFPageDocumentHelper helper(inPdf);
+        auto pages = helper.getAllPages();
+        std::string baseName = WideToUtf8(inPath);
+        baseName = baseName.substr(0, baseName.find_last_of('.'));
+
+        for (size_t i = 0; i < pages.size(); ++i) {
+            QPDF outPdf; outPdf.emptyPDF();
+            QPDFPageDocumentHelper outHelper(outPdf);
+            outHelper.addPage(pages[i], false);
+            std::string outName = baseName + "_page_" + std::to_string(i + 1) + ".pdf";
+            QPDFWriter writer(outPdf, outName.c_str()); writer.write();
+        }
+        MessageBoxW(hwnd, L"PDF Burst into individual pages!", L"Success", MB_OK);
+    } catch(...) { MessageBoxW(hwnd, L"Failed to organize PDF", L"Error", MB_ICONERROR); }
+}
+
+// 14. OpenCV Fast Photo Viewer
+void Feature_PhotoViewer(HWND hwnd) {
+    std::wstring inPath = OpenFileDialog(hwnd, L"Images\0*.jpg;*.png;*.bmp\0"); if (inPath.empty()) return;
+    cv::Mat img = cv::imread(WideToUtf8(inPath));
+    if (img.empty()) { MessageBoxW(hwnd, L"Failed to load image.", L"Error", MB_ICONERROR); return; }
+    
+    int maxW = 1024, maxH = 768;
+    if (img.cols > maxW || img.rows > maxH) {
+        double scale = std::min((double)maxW/img.cols, (double)maxH/img.rows);
+        cv::resize(img, img, cv::Size(), scale, scale, cv::INTER_AREA);
+    }
+    cv::imshow("Rasel's Photo Viewer (Press ANY key to close)", img);
+    cv::waitKey(0); cv::destroyWindow("Rasel's Photo Viewer (Press ANY key to close)");
+}
+
+// 15. CSV/Text Log Viewer
+void Feature_TextViewer(HWND hwnd) {
+    std::wstring inPath = OpenFileDialog(hwnd, L"Data Files\0*.csv;*.txt;*.log\0"); if (inPath.empty()) return;
+    ShellExecuteW(hwnd, L"open", L"notepad.exe", inPath.c_str(), NULL, SW_SHOWNORMAL);
+}
+
+// 16. Universal Doc/Excel Launcher
+void Feature_ExcelDocViewer(HWND hwnd) {
+    std::wstring inPath = OpenFileDialog(hwnd, L"Office Documents\0*.xlsx;*.docx;*.pptx\0"); if (inPath.empty()) return;
+    HINSTANCE result = ShellExecuteW(hwnd, L"open", inPath.c_str(), NULL, NULL, SW_SHOWNORMAL);
+    if ((INT_PTR)result <= 32) MessageBoxW(hwnd, L"No application found to open this document.", L"Viewer Error", MB_ICONWARNING);
+}
+
+
+// ==========================================================
+// 17 TO 24: SYSTEM UTILITIES & FOCUS TOOLS
+// ==========================================================
+
 void Feature_AgeCalculator(HWND hwnd) {
-    std::string dob = GetClipboardText(hwnd);
-    if(dob.length() >= 10) MessageBoxW(hwnd, L"Age Calculated Successfully!", L"Age Calc", MB_OK);
-    else MessageBoxW(hwnd, L"Copy YYYY-MM-DD to clipboard first.", L"Error", MB_ICONWARNING);
+    std::string dobStr = GetClipboardText(hwnd);
+    if (dobStr.length() < 10) { MessageBoxW(hwnd, L"Copy your Date of Birth (YYYY-MM-DD) first!", L"Warning", MB_ICONWARNING); return; }
+    int by, bm, bd;
+    if (sscanf(dobStr.c_str(), "%d-%d-%d", &by, &bm, &bd) == 3) {
+        SYSTEMTIME st; GetLocalTime(&st);
+        int cy = st.wYear, cm = st.wMonth, cd = st.wDay;
+        int ageY = cy - by, ageM = cm - bm, ageD = cd - bd;
+        if (ageD < 0) { ageM--; ageD += 30; } 
+        if (ageM < 0) { ageY--; ageM += 12; }
+        std::wstring msg = L"Age:\n" + std::to_wstring(ageY) + L" Years, " + std::to_wstring(ageM) + L" Months, " + std::to_wstring(ageD) + L" Days.";
+        MessageBoxW(hwnd, msg.c_str(), L"Age Calculator", MB_OK | MB_ICONINFORMATION);
+    } else {
+        MessageBoxW(hwnd, L"Invalid Format! Use YYYY-MM-DD.", L"Error", MB_ICONERROR);
+    }
 }
 
 void Feature_PassGen(HWND hwnd) {
-    SetClipboardText(hwnd, "R@sFocusPr0M@x!26");
-    MessageBoxW(hwnd, L"Strong Password Generated & Copied!", L"PassGen", MB_OK);
+    const std::string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()";
+    std::random_device rd; std::mt19random_engine gen(rd());
+    std::uniform_int_distribution<> dist(0, chars.size() - 1);
+    std::string pass = ""; for (int i = 0; i < 16; ++i) pass += chars[dist(gen)];
+    SetClipboardText(hwnd, pass);
+    std::wstring msg = L"Generated Password: " + Utf8ToWide(pass) + L"\n(Copied to Clipboard!)";
+    MessageBoxW(hwnd, msg.c_str(), L"PassGen", MB_OK);
 }
 
 void Feature_PCHealth(HWND hwnd) {
     MEMORYSTATUSEX memInfo; memInfo.dwLength = sizeof(MEMORYSTATUSEX); GlobalMemoryStatusEx(&memInfo);
-    double ram = memInfo.ullTotalPhys / (1024.0*1024.0*1024.0);
-    std::wstring msg = L"Total RAM: " + std::to_wstring(ram) + L" GB\nSystem Status: Healthy 🟢";
+    double totalRam = memInfo.ullTotalPhys / (1024.0*1024.0*1024.0);
+    double freeRam = memInfo.ullAvailPhys / (1024.0*1024.0*1024.0);
+    std::wstring msg = L"Total RAM: " + std::to_wstring(totalRam) + L" GB\nFree RAM: " + std::to_wstring(freeRam) + L" GB\nStatus: Healthy";
     MessageBoxW(hwnd, msg.c_str(), L"Health", MB_OK);
 }
 
-void Feature_FileHash(HWND hwnd) { MessageBoxW(hwnd, L"File Hash (SHA-256) Verified.", L"Security", MB_OK); }
+void Feature_FileHash(HWND hwnd) {
+    std::wstring inPath = OpenFileDialog(hwnd, L"Any File\0*.*\0"); if (inPath.empty()) return;
+    std::wstring cmd = L"cmd.exe /c certutil -hashfile \"" + inPath + L"\" SHA256 > hash_temp.txt";
+    _wsystem(cmd.c_str());
+    std::ifstream file("hash_temp.txt"); std::string line, hashRes = "";
+    while (std::getline(file, line)) hashRes += line + "\n";
+    file.close(); remove("hash_temp.txt");
+    MessageBoxW(hwnd, Utf8ToWide(hashRes).c_str(), L"SHA-256 Hash", MB_OK);
+}
 
-
-// --- NEW BRAND FEATURES (21-24) ---
-
-// 21. Auto Focus Noise Generator (White Noise via Threading)
 std::atomic<bool> g_playNoise(false);
 std::thread g_noiseThread;
-
 void NoiseGeneratorTask() {
-    HWAVEOUT hWaveOut;
-    WAVEFORMATEX wfx = {WAVE_FORMAT_PCM, 1, 44100, 44100, 1, 8, 0};
+    HWAVEOUT hWaveOut; WAVEFORMATEX wfx = {WAVE_FORMAT_PCM, 1, 44100, 44100, 1, 8, 0};
     waveOutOpen(&hWaveOut, WAVE_MAPPER, &wfx, 0, 0, CALLBACK_NULL);
-    
-    char buffer[44100]; 
-    WAVEHDR header = {buffer, sizeof(buffer), 0, 0, 0, 0, 0, 0};
+    char buffer[44100]; WAVEHDR header = {buffer, sizeof(buffer), 0, 0, 0, 0, 0, 0};
     waveOutPrepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
-    
     while(g_playNoise) {
-        for(int i=0; i<44100; ++i) buffer[i] = (char)(rand() % 256); // Raw White Noise
+        for(int i=0; i<44100; ++i) buffer[i] = (char)(rand() % 256); 
         waveOutWrite(hWaveOut, &header, sizeof(WAVEHDR));
-        Sleep(900); // Sleep just enough to prevent blocking, keeping audio continuous
+        Sleep(900); 
     }
-    
-    waveOutUnprepareHeader(hWaveOut, &header, sizeof(WAVEHDR));
-    waveOutClose(hWaveOut);
+    waveOutUnprepareHeader(hWaveOut, &header, sizeof(WAVEHDR)); waveOutClose(hWaveOut);
 }
 
 void Feature_AutoFocusNoise(HWND hwnd) {
     if (g_playNoise) {
-        g_playNoise = false;
-        if (g_noiseThread.joinable()) g_noiseThread.join();
-        MessageBoxW(hwnd, L"Focus Noise Stopped.", L"Audio", MB_OK);
+        g_playNoise = false; if (g_noiseThread.joinable()) g_noiseThread.join();
     } else {
-        g_playNoise = true;
-        g_noiseThread = std::thread(NoiseGeneratorTask);
+        g_playNoise = true; g_noiseThread = std::thread(NoiseGeneratorTask);
         MessageBoxW(hwnd, L"Focus Noise Started! Click again to stop.", L"Audio", MB_ICONINFORMATION);
     }
 }
 
-// 22. Eye Care Monitor (20-20-20 Rule Timer)
 bool g_eyeCareActive = false;
 void Feature_EyeCare(HWND hwnd) {
-    if (g_eyeCareActive) {
-        KillTimer(hwnd, 2020);
-        g_eyeCareActive = false;
-        MessageBoxW(hwnd, L"Eye Care Monitor Disabled.", L"Eye Care", MB_OK);
-    } else {
-        SetTimer(hwnd, 2020, 20 * 60 * 1000, NULL); // 20 Minutes
-        g_eyeCareActive = true;
-        MessageBoxW(hwnd, L"Eye Care Active! You will be reminded every 20 minutes.", L"Eye Care", MB_ICONINFORMATION);
-    }
+    if (g_eyeCareActive) { KillTimer(hwnd, 2020); g_eyeCareActive = false; } 
+    else { SetTimer(hwnd, 2020, 20 * 60 * 1000, NULL); g_eyeCareActive = true; MessageBoxW(hwnd, L"Eye Care Active! 20-Min Timer started.", L"Info", MB_OK); }
 }
 
-// 23. Screen Blue Light Filter / Night Light Overlay
 HWND g_hFilterWnd = NULL;
 void Feature_BlueLightFilter(HWND hwnd) {
-    if (g_hFilterWnd) {
-        DestroyWindow(g_hFilterWnd);
-        g_hFilterWnd = NULL;
-    } else {
-        WNDCLASSW wc = {0};
-        wc.lpfnWndProc = DefWindowProc;
-        wc.hInstance = GetModuleHandle(NULL);
-        wc.hbrBackground = CreateSolidBrush(RGB(255, 120, 0)); // Amber/Orange filter
-        wc.lpszClassName = L"NightLightOverlay";
-        RegisterClassW(&wc);
-        
-        int w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-        int h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-        int x = GetSystemMetrics(SM_XVIRTUALSCREEN);
-        int y = GetSystemMetrics(SM_YVIRTUALSCREEN);
-        
-        // WS_EX_TRANSPARENT makes it click-through, WS_EX_TOPMOST keeps it on top
+    if (g_hFilterWnd) { DestroyWindow(g_hFilterWnd); g_hFilterWnd = NULL; } 
+    else {
+        WNDCLASSW wc = {0}; wc.lpfnWndProc = DefWindowProc; wc.hInstance = GetModuleHandle(NULL);
+        wc.hbrBackground = CreateSolidBrush(RGB(255, 120, 0)); wc.lpszClassName = L"NightLightOverlay"; RegisterClassW(&wc);
+        int w = GetSystemMetrics(SM_CXVIRTUALSCREEN), h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        int x = GetSystemMetrics(SM_XVIRTUALSCREEN), y = GetSystemMetrics(SM_YVIRTUALSCREEN);
         g_hFilterWnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
             L"NightLightOverlay", L"", WS_POPUP | WS_VISIBLE, x, y, w, h, NULL, NULL, wc.hInstance, NULL);
-        
-        SetLayeredWindowAttributes(g_hFilterWnd, 0, 60, LWA_ALPHA); // 60/255 Opacity
+        SetLayeredWindowAttributes(g_hFilterWnd, 0, 60, LWA_ALPHA); 
     }
 }
 
-// 24. Pomodoro Focus Timer (25 Mins)
 void Feature_PomodoroTimer(HWND hwnd) {
-    SetTimer(hwnd, 2525, 25 * 60 * 1000, NULL); // 25 Minutes
+    SetTimer(hwnd, 2525, 25 * 60 * 1000, NULL);
     MessageBoxW(hwnd, L"Pomodoro 25-Min Timer Started! Focus now.", L"Pomodoro", MB_ICONINFORMATION);
 }
-
 
 // --- UI DRAWING & LOGIC ---
 void DrawUI(Graphics& g) {
@@ -254,8 +483,8 @@ void DrawUI(Graphics& g) {
 
     Font btnFont(&ff, 13, FontStyleBold, UnitPixel);
     SolidBrush btnBg(Color(255, 20, 30, 50)); 
-    SolidBrush btnHover(Color(255, 16, 185, 129)); // Greenish Emerald for productivity
-    SolidBrush btnActive(Color(255, 239, 68, 68)); // Red for active states (Noise/Filter)
+    SolidBrush btnHover(Color(255, 16, 185, 129)); 
+    SolidBrush btnActive(Color(255, 239, 68, 68)); 
     SolidBrush white(Color(255, 255, 255, 255));
     Pen border(Color(255, 200, 210, 220), 1.0f);
 
@@ -266,12 +495,10 @@ void DrawUI(Graphics& g) {
     for (const auto& btn : g_features) {
         if (g_hoveredBtn == btn.id) g.FillRectangle(&btnHover, btn.bounds);
         else {
-            // Highlight active toggle buttons
             if ((btn.id == 21 && g_playNoise) || (btn.id == 22 && g_eyeCareActive) || (btn.id == 23 && g_hFilterWnd)) 
                  g.FillRectangle(&btnActive, btn.bounds);
             else g.FillRectangle(&btnBg, btn.bounds);
         }
-        
         g.DrawRectangle(&border, btn.bounds.X, btn.bounds.Y, btn.bounds.Width, btn.bounds.Height);
         g.DrawString(btn.label.c_str(), -1, &btnFont, btn.bounds, &format, &white);
     }
@@ -280,9 +507,7 @@ void DrawUI(Graphics& g) {
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
     case WM_CREATE: {
-        // Setup 6x4 Grid of 24 tools
         float startX = 35.0f, startY = 75.0f, w = 250.0f, h = 80.0f, gapX = 20.0f, gapY = 20.0f;
-        
         g_features.push_back({1, L"1. Job Photo (300x300)", RectF(startX, startY, w, h)});
         g_features.push_back({2, L"2. Signature (300x80)", RectF(startX + w + gapX, startY, w, h)});
         g_features.push_back({3, L"3. CamScanner Filter", RectF(startX + 2*(w + gapX), startY, w, h)});
@@ -312,39 +537,26 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         g_features.push_back({19, L"19. PC Health & Battery", RectF(startX + 2*(w + gapX), startY, w, h)});
         g_features.push_back({20, L"20. File Hash Validator", RectF(startX + 3*(w + gapX), startY, w, h)});
 
-        // ROW 6 (The NEW Focus & Eye Care Features)
         startY += h + gapY;
         g_features.push_back({21, L"21. Focus Noise (ON/OFF)", RectF(startX, startY, w, h)});
         g_features.push_back({22, L"22. Eye Care (20-20-20)", RectF(startX + w + gapX, startY, w, h)});
         g_features.push_back({23, L"23. Blue Light Filter", RectF(startX + 2*(w + gapX), startY, w, h)});
         g_features.push_back({24, L"24. Pomodoro Timer (25m)", RectF(startX + 3*(w + gapX), startY, w, h)});
-        
         return 0;
     }
     
     case WM_TIMER: {
-        if (wParam == 2020) {
-            MessageBoxW(hwnd, L"👀 20-20-20 RULE! Look at something 20 feet away for 20 seconds to protect your eyes.", L"Eye Care Alert", MB_ICONWARNING | MB_SYSTEMMODAL);
-        } else if (wParam == 2525) {
-            KillTimer(hwnd, 2525);
-            MessageBoxW(hwnd, L"⏰ Pomodoro Session Complete! Take a 5-minute break.", L"Pomodoro", MB_ICONINFORMATION | MB_SYSTEMMODAL);
-        }
+        if (wParam == 2020) MessageBoxW(hwnd, L"👀 20-20-20 RULE! Look at something 20 feet away.", L"Eye Care", MB_ICONWARNING | MB_SYSTEMMODAL);
+        else if (wParam == 2525) { KillTimer(hwnd, 2525); MessageBoxW(hwnd, L"⏰ Pomodoro Complete! Take a break.", L"Pomodoro", MB_ICONINFORMATION | MB_SYSTEMMODAL); }
         return 0;
     }
 
     case WM_PAINT: {
         PAINTSTRUCT ps; HDC hdc = BeginPaint(hwnd, &ps);
         RECT rc; GetClientRect(hwnd, &rc);
-        HDC memDC = CreateCompatibleDC(hdc);
-        HBITMAP memBmp = CreateCompatibleBitmap(hdc, rc.right, rc.bottom);
-        SelectObject(memDC, memBmp);
-
-        Graphics g(memDC);
-        g.SetSmoothingMode(SmoothingModeHighQuality);
-        g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
-        g.ScaleTransform(g_scaleFactor, g_scaleFactor);
+        HDC memDC = CreateCompatibleDC(hdc); HBITMAP memBmp = CreateCompatibleBitmap(hdc, rc.right, rc.bottom); SelectObject(memDC, memBmp);
+        Graphics g(memDC); g.SetSmoothingMode(SmoothingModeHighQuality); g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit); g.ScaleTransform(g_scaleFactor, g_scaleFactor);
         DrawUI(g);
-
         BitBlt(hdc, 0, 0, rc.right, rc.bottom, memDC, 0, 0, SRCCOPY);
         DeleteObject(memBmp); DeleteDC(memDC); EndPaint(hwnd, &ps);
         return 0;
@@ -352,11 +564,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     case WM_MOUSEMOVE: {
         int x = GET_X_LPARAM(lParam) / g_scaleFactor, y = GET_Y_LPARAM(lParam) / g_scaleFactor;
         int oldHover = g_hoveredBtn; g_hoveredBtn = -1;
-        for (const auto& btn : g_features) {
-            if (x >= btn.bounds.X && x <= btn.bounds.X + btn.bounds.Width && y >= btn.bounds.Y && y <= btn.bounds.Y + btn.bounds.Height) {
-                g_hoveredBtn = btn.id; break;
-            }
-        }
+        for (const auto& btn : g_features) { if (x >= btn.bounds.X && x <= btn.bounds.X + btn.bounds.Width && y >= btn.bounds.Y && y <= btn.bounds.Y + btn.bounds.Height) { g_hoveredBtn = btn.id; break; } }
         if (oldHover != g_hoveredBtn) InvalidateRect(hwnd, NULL, FALSE);
         return 0;
     }
@@ -375,7 +583,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 case 10: Feature_GenerateQR(hwnd); break;
                 case 11: Feature_LockPDF(hwnd); break;
                 case 12: Feature_UnlockPDF(hwnd); break;
-                case 13: Feature_MergePDF(hwnd); /* Burst logic */ break;
+                case 13: Feature_PDFOrganizer(hwnd); break;
                 case 14: Feature_PhotoViewer(hwnd); break;
                 case 15: Feature_TextViewer(hwnd); break;
                 case 16: Feature_ExcelDocViewer(hwnd); break;
@@ -401,24 +609,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     SetProcessDPIAware();
-    HDC screen = GetDC(0);
-    g_scaleFactor = GetDeviceCaps(screen, LOGPIXELSX) / 96.0f;
-    ReleaseDC(0, screen);
-
-    GdiplusStartupInput gdiplusSI; ULONG_PTR gdiplusToken;
-    GdiplusStartup(&gdiplusToken, &gdiplusSI, NULL);
+    HDC screen = GetDC(0); g_scaleFactor = GetDeviceCaps(screen, LOGPIXELSX) / 96.0f; ReleaseDC(0, screen);
+    GdiplusStartupInput gdiplusSI; ULONG_PTR gdiplusToken; GdiplusStartup(&gdiplusToken, &gdiplusSI, NULL);
 
     WNDCLASSW wc = { 0 };
-    wc.lpfnWndProc = WindowProc;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = L"RasFocusProApp";
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-    RegisterClassW(&wc);
+    wc.lpfnWndProc = WindowProc; wc.hInstance = hInstance; wc.lpszClassName = L"RasFocusProApp";
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW); wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); RegisterClassW(&wc);
 
     HWND hwnd = CreateWindowExW(0, L"RasFocusProApp", L"RasFocus Pro Max & Ultimate Toolset", 
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE, 
-        CW_USEDEFAULT, CW_USEDEFAULT, BASE_WIDTH * g_scaleFactor, BASE_HEIGHT * g_scaleFactor, 
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, BASE_WIDTH * g_scaleFactor, BASE_HEIGHT * g_scaleFactor, 
         NULL, NULL, hInstance, NULL);
 
     MSG msg;
