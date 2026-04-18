@@ -7,6 +7,6 @@
     "qpdf",
     "libharu",
     "tesseract",
-    "qrcodegen"
+    "nayuki-qr-code-generator"
   ]
 }
