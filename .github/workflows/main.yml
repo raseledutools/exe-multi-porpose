@@ -1,0 +1,39 @@
+name: Build RasFocus Pro Max (Win32)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # Allows you to run it manually
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup vcpkg and Install Dependencies
+        # vcpkg is pre-installed on GitHub windows runners, we just integrate it
+        run: |
+          vcpkg install opencv poppler qpdf libharu tesseract qrcodegen --triplet x64-windows
+          vcpkg integrate install
+
+      - name: Configure CMake
+        run: |
+          mkdir build
+          cd build
+          cmake .. -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" -A x64
+
+      - name: Build Executable
+        run: |
+          cd build
+          cmake --build . --config Release
+
+      - name: Upload EXE as Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: RasFocus-Pro-Max-App
+          path: build/Release/RasFocusProMax.exe
