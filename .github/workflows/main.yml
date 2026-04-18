@@ -3,33 +3,22 @@ name: Build RasFocus Pro Max (Win32)
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
   build-windows:
     runs-on: windows-latest
 
-    # Using lukka/run-vcpkg guarantees proper integration with CMake
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup and Install vcpkg dependencies
-        uses: lukka/run-vcpkg@v11
-        with:
-          vcpkgDirectory: ${{ github.workspace }}/vcpkg
-          vcpkgGitCommitId: master # Gets the latest vcpkg
-          # This command explicitly installs all libraries for 64-bit Windows
-          runVcpkgInstall: true
-          vcpkgJsonGlob: 'vcpkg.json' # We will use a vcpkg.json file
-
-      - name: Configure CMake
+      - name: Configure CMake (Auto-installs vcpkg libraries)
+        # CMake vcpkg.json দেখে নিজেই সব ইনস্টল করে নেবে!
         run: |
           mkdir build
           cd build
-          cmake .. -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -A x64
+          cmake .. -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -A x64
 
       - name: Build Executable
         run: |
