@@ -1,0 +1,12 @@
+{
+  "name": "rasfocus-pro-max",
+  "version-string": "1.0.0",
+  "dependencies": [
+    "opencv",
+    "poppler",
+    "qpdf",
+    "libharu",
+    "tesseract",
+    "qrcodegen"
+  ]
+}
