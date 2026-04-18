@@ -5,7 +5,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-  workflow_dispatch: # Allows you to run it manually
+  workflow_dispatch:
 
 jobs:
   build-windows:
@@ -13,10 +13,9 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # <-- এখানে v4 করা হয়েছে
 
       - name: Setup vcpkg and Install Dependencies
-        # vcpkg is pre-installed on GitHub windows runners, we just integrate it
         run: |
           vcpkg install opencv poppler qpdf libharu tesseract qrcodegen --triplet x64-windows
           vcpkg integrate install
@@ -33,7 +32,7 @@ jobs:
           cmake --build . --config Release
 
       - name: Upload EXE as Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4  # <-- এখানেও v4 করা হয়েছে
         with:
           name: RasFocus-Pro-Max-App
           path: build/Release/RasFocusProMax.exe
