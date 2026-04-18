@@ -15,18 +15,20 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup vcpkg and Install Dependencies
-        # This will install 64-bit libraries explicitly
+      - name: Install Dependencies via vcpkg
+        shell: pwsh
+        # গিটহাবের প্রি-ইনস্টল করা vcpkg এর অরিজিনাল পাথ ব্যবহার করা হলো
         run: |
-          vcpkg install opencv poppler qpdf libharu tesseract qrcodegen --triplet x64-windows
-          vcpkg integrate install
+          $vcpkg_path = "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe"
+          & $vcpkg_path install opencv poppler qpdf libharu tesseract qrcodegen --triplet x64-windows
+          & $vcpkg_path integrate install
 
       - name: Configure CMake
-        # Strictly telling CMake to use the x64-windows triplet
+        shell: pwsh
         run: |
           mkdir build
           cd build
-          cmake .. -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -A x64
+          cmake .. -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -A x64
 
       - name: Build Executable
         run: |
