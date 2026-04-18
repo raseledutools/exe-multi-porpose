@@ -11,24 +11,25 @@ jobs:
   build-windows:
     runs-on: windows-latest
 
+    # Using lukka/run-vcpkg guarantees proper integration with CMake
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install Dependencies via vcpkg
-        shell: pwsh
-        # গিটহাবের প্রি-ইনস্টল করা vcpkg এর অরিজিনাল পাথ ব্যবহার করা হলো
-        run: |
-          $vcpkg_path = "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe"
-          & $vcpkg_path install opencv poppler qpdf libharu tesseract qrcodegen --triplet x64-windows
-          & $vcpkg_path integrate install
+      - name: Setup and Install vcpkg dependencies
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: ${{ github.workspace }}/vcpkg
+          vcpkgGitCommitId: master # Gets the latest vcpkg
+          # This command explicitly installs all libraries for 64-bit Windows
+          runVcpkgInstall: true
+          vcpkgJsonGlob: 'vcpkg.json' # We will use a vcpkg.json file
 
       - name: Configure CMake
-        shell: pwsh
         run: |
           mkdir build
           cd build
-          cmake .. -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -A x64
+          cmake .. -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -A x64
 
       - name: Build Executable
         run: |
