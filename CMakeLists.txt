@@ -5,13 +5,24 @@ project(RasFocusProMax)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Strict vcpkg package configuration
+# 1. Find OpenCV
 find_package(OpenCV CONFIG REQUIRED)
-find_package(libharu CONFIG REQUIRED)
-find_package(Poppler CONFIG REQUIRED)
+
+# 2. Find libharu (vcpkg uses 'unofficial-libharu')
+find_package(unofficial-libharu CONFIG REQUIRED)
+
+# 3. Find Tesseract (Requires Capital 'T')
+find_package(Tesseract CONFIG REQUIRED)
+
+# 4. Find QPDF
 find_package(qpdf CONFIG REQUIRED)
-find_package(tesseract CONFIG REQUIRED)
-find_package(nayuki-qr-code-generator CONFIG REQUIRED)
+
+# 5. Find QR Code Generator
+find_package(unofficial-nayuki-qr-code-generator CONFIG REQUIRED)
+
+# 6. Find Poppler (Requires PkgConfig as per your log)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(POPPLER_CPP REQUIRED IMPORTED_TARGET poppler-cpp)
 
 # Executable Setup (WIN32 hides the CMD console)
 add_executable(RasFocusProMax WIN32 main.cpp)
@@ -24,12 +35,12 @@ target_link_libraries(RasFocusProMax PRIVATE
     shlwapi
 )
 
-# Link vcpkg External Libraries perfectly
+# Link vcpkg External Libraries exactly as vcpkg instructed in the log
 target_link_libraries(RasFocusProMax PRIVATE
     ${OpenCV_LIBS}
-    libharu::hpdf
-    Poppler::poppler
-    qpdf::qpdf
-    libtesseract
-    nayuki-qr-code-generator::nayuki-qr-code-generator
+    unofficial::libharu::hpdf
+    Tesseract::libtesseract
+    qpdf::libqpdf
+    unofficial::nayuki-qr-code-generator::nayuki-qr-code-generator
+    PkgConfig::POPPLER_CPP
 )
