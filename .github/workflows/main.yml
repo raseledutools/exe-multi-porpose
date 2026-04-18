@@ -13,8 +13,6 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # --- ১. ক্যাশ (Cache) সিস্টেম যুক্ত করা হলো ---
-      # এটি আপনার vcpkg এর ডাউনলোড এবং কম্পাইল করা ফাইলগুলো সেভ করে রাখবে
       - name: Cache vcpkg downloaded and compiled files
         uses: actions/cache@v4
         with:
@@ -22,23 +20,22 @@ jobs:
             build/vcpkg_installed
             C:/vcpkg/downloads
             ~\AppData\Local\vcpkg\archives
-          # vcpkg.json ফাইলে নতুন কোনো লাইব্রেরি অ্যাড করলে অটোমেটিক নতুন ক্যাশ তৈরি হবে
           key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             ${{ runner.os }}-vcpkg-
 
-      # --- ২. কনফিগারেশন (স্মার্ট কমান্ড) ---
-      # cmake -B build দিয়ে অটোমেটিক ফোল্ডার তৈরি হবে, তাই আলাদা করে mkdir বা cd করতে হবে না
+      # --- এই নতুন স্টেপটি যোগ করা হলো ---
+      - name: Install pkg-config (Required for Poppler)
+        run: choco install pkgconfiglite -y
+
       - name: Configure CMake (Auto-installs vcpkg libraries)
         run: |
           cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -A x64
 
-      # --- ৩. বিল্ড ---
       - name: Build Executable
         run: |
           cmake --build build --config Release
 
-      # --- ৪. আপলোড ---
       - name: Upload EXE as Artifact
         uses: actions/upload-artifact@v4
         with:
