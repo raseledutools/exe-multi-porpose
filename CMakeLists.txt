@@ -11,7 +11,7 @@ find_package(libharu CONFIG REQUIRED)
 find_package(Poppler CONFIG REQUIRED)
 find_package(qpdf CONFIG REQUIRED)
 find_package(tesseract CONFIG REQUIRED)
-find_package(qrcodegen CONFIG REQUIRED)
+find_package(nayuki-qr-code-generator CONFIG REQUIRED)
 
 # Executable Setup (WIN32 hides the CMD console)
 add_executable(RasFocusProMax WIN32 main.cpp)
@@ -31,5 +31,5 @@ target_link_libraries(RasFocusProMax PRIVATE
     Poppler::poppler
     qpdf::qpdf
     libtesseract
-    qrcodegen::qrcodegen
+    nayuki-qr-code-generator::nayuki-qr-code-generator
 )
