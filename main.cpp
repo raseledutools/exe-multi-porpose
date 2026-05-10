@@ -44,13 +44,14 @@
 
 // ── PDFium ───────────────────────────────────────────────────────────────────
 
-#include "pdfium/include/fpdf_edit.h"
-#include "pdfium/include/fpdf_save.h"
-#include "pdfium/include/fpdf_text.h"
-#include "pdfium/include/fpdf_annot.h"
-#include "pdfium/include/fpdf_formfill.h"
-#include "pdfium/include/fpdf_flatten.h"
-#pragma comment(lib, "pdfium/lib/pdfium.lib")
+// --- PDFium ---
+#include <fpdf_edit.h>
+#include <fpdf_save.h>
+#include <fpdf_text.h>
+#include <fpdf_annot.h>
+#include <fpdf_formfill.h>
+#include <fpdf_flatten.h>
+#include <fpdfview.h>
 
 // ── STL ──────────────────────────────────────────────────────────────────────
 #include <vector>
