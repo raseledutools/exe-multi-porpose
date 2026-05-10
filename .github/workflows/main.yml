@@ -24,11 +24,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-
 
+      - name: Update vcpkg (Fixed pdfium does not exist error)
+        shell: pwsh
+        run: |
+          cd $env:VCPKG_INSTALLATION_ROOT
+          git pull
+          ./bootstrap-vcpkg.bat
+
       - name: Install pkg-config
         run: choco install pkgconfiglite -y
 
       - name: Configure CMake
-        # এখানে VCPKG_INSTALLATION_ROOT ব্যবহার করা নিরাপদ
+        shell: pwsh
         run: |
           cmake -B build -S . `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
