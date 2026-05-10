@@ -35,6 +35,7 @@
 #include <commdlg.h>
 #include <shellapi.h>
 #include <gdiplus.h>
+#include <fpdfview.h>
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "comdlg32.lib")
@@ -42,7 +43,7 @@
 #pragma comment(lib, "shell32.lib")
 
 // ── PDFium ───────────────────────────────────────────────────────────────────
-#include "pdfium/include/fpdfview.h"
+
 #include "pdfium/include/fpdf_edit.h"
 #include "pdfium/include/fpdf_save.h"
 #include "pdfium/include/fpdf_text.h"
