@@ -1,5 +1,5 @@
 {
-  "name": "rasfocus-pro-max",
+  "name": "RasFocusProMax",
   "version-string": "1.0.0",
   "dependencies": [
     "opencv",
@@ -7,7 +7,6 @@
     "qpdf",
     "libharu",
     "tesseract",
-    "nayuki-qr-code-generator",
-    "pdfium"
+    "nayuki-qr-code-generator"
   ]
 }
