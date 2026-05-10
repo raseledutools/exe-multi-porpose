@@ -13,24 +13,27 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Cache vcpkg downloaded and compiled files
+      - name: Cache vcpkg
         uses: actions/cache@v4
         with:
           path: |
             build/vcpkg_installed
             C:/vcpkg/downloads
-            ~\AppData\Local\vcpkg\archives
+            ~/AppData/Local/vcpkg/archives
           key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             ${{ runner.os }}-vcpkg-
 
-      # --- এই নতুন স্টেপটি যোগ করা হলো ---
-      - name: Install pkg-config (Required for Poppler)
+      - name: Install pkg-config
         run: choco install pkgconfiglite -y
 
-      - name: Configure CMake (Auto-installs vcpkg libraries)
+      - name: Configure CMake
+        # এখানে VCPKG_INSTALLATION_ROOT ব্যবহার করা নিরাপদ
         run: |
-          cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows -A x64
+          cmake -B build -S . `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -A x64
 
       - name: Build Executable
         run: |
