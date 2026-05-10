@@ -24,6 +24,9 @@ find_package(unofficial-nayuki-qr-code-generator CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(POPPLER_CPP REQUIRED IMPORTED_TARGET poppler-cpp)
 
+# 7. Find PDFium (নতুন যুক্ত করা হয়েছে)
+find_package(pdfium CONFIG REQUIRED)
+
 # Executable Setup (WIN32 hides the CMD console)
 add_executable(RasFocusProMax WIN32 main.cpp)
 
@@ -43,4 +46,5 @@ target_link_libraries(RasFocusProMax PRIVATE
     qpdf::libqpdf
     unofficial::nayuki-qr-code-generator::nayuki-qr-code-generator
     PkgConfig::POPPLER_CPP
+    pdfium::pdfium # (নতুন যুক্ত করা হয়েছে)
 )
