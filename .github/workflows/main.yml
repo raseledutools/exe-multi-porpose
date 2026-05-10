@@ -1,14 +1,11 @@
 name: Build RasFocus Pro Max (Win32)
-
 on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
-
 jobs:
   build-windows:
     runs-on: windows-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -24,7 +21,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-
 
-      - name: Update vcpkg (Fixed pdfium does not exist error)
+      - name: Update vcpkg
         shell: pwsh
         run: |
           cd $env:VCPKG_INSTALLATION_ROOT
@@ -34,20 +31,37 @@ jobs:
       - name: Install pkg-config
         run: choco install pkgconfiglite -y
 
+      - name: Download PDFium (pre-built binary)
+        shell: pwsh
+        run: |
+          $url = "https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-win-x64.tgz"
+          Invoke-WebRequest -Uri $url -OutFile pdfium.tgz
+          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/pdfium"
+          tar -xzf pdfium.tgz -C "${{ github.workspace }}/pdfium"
+          echo "PDFIUM_DIR=${{ github.workspace }}/pdfium" >> $env:GITHUB_ENV
+
       - name: Configure CMake
         shell: pwsh
         run: |
           cmake -B build -S . `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DPDFIUM_DIR="${{ github.workspace }}/pdfium" `
             -A x64
 
       - name: Build Executable
         run: |
           cmake --build build --config Release
 
+      - name: Copy pdfium.dll next to EXE
+        shell: pwsh
+        run: |
+          Copy-Item "${{ github.workspace }}/pdfium/bin/pdfium.dll" -Destination "build/Release/"
+
       - name: Upload EXE as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: RasFocus-Pro-Max-App
-          path: build/Release/RasFocusProMax.exe
+          path: |
+            build/Release/RasFocusProMax.exe
+            build/Release/pdfium.dll
